@@ -1,60 +1,154 @@
-library(caret)
-library(party)
-library(tidyverse)
-library(readr)
+# ------ Customer brand preference ----- #
+# developer: Afroditi Doriti
+# version: 2.0
+# changes: used doParallel
+# description: customer brand preferences, classification models
+# input: "Survey_Key_and_Complete_Responses_excel.csv", "SurveyIncomplete.csv"
+# data ownership: Ubiqum code academy
+# ------------------------------- #
+# outputs: "SurveyCompleted.csv"
+# ------------------------------- #
 
-FullSurvey <- read.csv(file = "C:/Users/ASUS/Documents/Ubiqum/2.2/Survey_Key_and_Complete_Responses_excel.csv", header = TRUE, sep = ",")
-summary(FullSurvey)
-str(FullSurvey)
+# load packages ----
+if (!require("pacman")) {
+  install.packages("pacman")
+}
+
+pacman::p_load("tidyverse",
+               "caret",
+               "party",
+               "doParallel")
+
+# doParallel ----
+# Choose a number of cores to use (1 less than detected)
+no_cores <- detectCores() - 1
+
+# Create Cluster with desired number of cores. Don't use them all! Your computer is running other processes.
+cl <- makeCluster(no_cores)
+
+# Register Cluster
+registerDoParallel(cl)
+
+# to onfirm how many cores are now "assigned" to R and RStudio
+# getDoParWorkers()
+
+# set wd and read file ----
+# set wd
+setwd("/home/adoriti/Documents/Ubiqum")
+
+# choose input file
+input_file <- "Survey_Key_and_Complete_Responses_excel.csv"
+input_file2 <- "SurveyIncomplete.csv"
+
+# read file
+FullSurvey <- read.csv(input_file, header = TRUE, sep = ",")
+
+# Preprocessing ----
+# make into factors
 FullSurvey$brand <- as.factor(FullSurvey$brand)
 FullSurvey$elevel <- as.factor(FullSurvey$elevel)
 FullSurvey$zipcode <- as.factor(FullSurvey$zipcode)
 FullSurvey$car <- as.factor(FullSurvey$car)
+
+# set the two brands as the levels of brand
 levels(FullSurvey$brand) <- c("Acer", "Sony")
-str(FullSurvey)
-tree <- ctree(brand ~ ., FullSurvey, controls = ctree_control(maxdepth = 3))
-plot(tree)
 
-plot(salary ~ brand, data = FullSurvey)
-Acer <- subset(FullSurvey, brand == "Acer")
-Sony <- subset(FullSurvey, brand == "Sony")
-plot(salary ~ age, data = Acer, col = "red")
-points(salary ~ age, data = Sony, col = "blue")
+# (optional) check tree
+# tree <- ctree(brand ~ ., FullSurvey, controls = ctree_control(maxdepth = 3))
+# plot(tree)
 
+# Models ----
+# set seed
 set.seed(123)
-inTrain <- createDataPartition(
-  y = FullSurvey$brand,
-  p = .75,
-  list = FALSE
-)
-training <- FullSurvey[inTrain,]
-testing <- FullSurvey[-inTrain,]
 
-fitControl <- trainControl(method = "repeatedcv", number = 10, repeats = 10)
-knn.model4 <- train(brand ~ ., data = training, method = "knn", trControl = fitControl, tuneLength = 30)
-knn.model4
-predictors(knn.model4)
-knn4.pred <- predict(knn.model4, newdata = testing)
-postResample(knn4.pred, testing$brand)
+# create data partition
+inTrain <- createDataPartition(y = FullSurvey$brand,
+                               p = .75,
+                               list = FALSE)
 
-fitControl2 <- trainControl(method = "repeatedcv", number = 10, repeats = 1)
-rf.model5 <- train (brand ~ ., data = training, method = "ranger", trControl = fitControl2, tuneLength = 10)
-rf.model5
-rf.pred5 <- predict(rf.model5, newdata = testing)
+# create training and testing sets
+training <- FullSurvey[inTrain, ]
+testing <- FullSurvey[-inTrain, ]
+
+# knn
+# create train control for knn
+fitControl <-
+  trainControl(method = "repeatedcv",
+               number = 10,
+               repeats = 10)
+
+# train knn model
+knn_model <-
+  train(
+    brand ~ .,
+    data = training,
+    method = "knn",
+    trControl = fitControl,
+    tuneLength = 30
+  )
+
+# check knn_model
+knn_model
+
+# check predictors for knn_model
+predictors(knn_model)
+
+# prediction with knn_model for testing data
+knn_pred <- predict(knn_model, newdata = testing)
+
+# check accuracy
+postResample(knn_pred, testing$brand)
+
+# random forest
+# Create train control for random forest
+fitControl2 <-
+  trainControl(method = "repeatedcv",
+               number = 10,
+               repeats = 1)
+
+# train random forest model
+rf_model <-
+  train (
+    brand ~ .,
+    data = training,
+    method = "ranger",
+    trControl = fitControl2,
+    tuneLength = 10
+  )
+
+# check random forest model
+rf_model
+
+# predict results using the random forest model for the testing set
+rf_pred <- predict(rf_model, newdata = testing)
+
+# check confustion matrix
 confusionMatrix(data = rf.pred5, testing$brand)
+
+# plot results
 plot(brand ~ salary, data = testing)
 plot(rf.pred5 ~ salary, data = testing)
-postResample(rf.pred5, testing$brand)
-plot(rf.pred5,testing$brand, ylab = "real brand", xlab = "predicted brand")
+postResample(rf_pred, testing$brand)
+plot(rf_pred, testing$brand, ylab = "real brand", xlab = "predicted brand")
 
-Incomplete <- read.csv(file = "C:/Users/ASUS/Documents/Ubiqum/2.2/SurveyIncomplete.csv", header = TRUE, sep = ",")
+# Incomplete survey ----
+# read incomplete survey
+Incomplete <-
+  read.csv(input_file2, header = TRUE, sep = ",")
+
+# same preprocessing as for the full survey (make into factors)
 Incomplete$brand <- as.factor(Incomplete$brand)
 Incomplete$elevel <- as.factor(Incomplete$elevel)
 Incomplete$zipcode <- as.factor(Incomplete$zipcode)
 Incomplete$car <- as.factor(Incomplete$car)
 
-Completed <- predict(rf.model5, newdata = Incomplete)
+# Prediction ----
+# prediction for the incomplete survey
+Completed <- predict(rf_model, newdata = Incomplete)
 Incomplete$brand <- Completed
 
-setwd("C:/Users/ASUS/Documents/Ubiqum/2.2")
-write.csv(Incomplete, file = "Completed2.csv")
+# save the resulting survey as csv
+write.csv(Incomplete, file = "SurveyCompleted.csv")
+
+# Stop Cluster ----
+stopCluster(cl)
