@@ -123,12 +123,14 @@ rf_model
 rf_pred <- predict(rf_model, newdata = testing)
 
 # check confustion matrix
-confusionMatrix(data = rf.pred5, testing$brand)
+confusionMatrix(data = rf_pred, testing$brand)
+
+# check accuracy
+postResample(rf_pred, testing$brand)
 
 # plot results
 plot(brand ~ salary, data = testing)
 plot(rf.pred5 ~ salary, data = testing)
-postResample(rf_pred, testing$brand)
 plot(rf_pred, testing$brand, ylab = "real brand", xlab = "predicted brand")
 
 # Incomplete survey ----
